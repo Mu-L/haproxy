@@ -873,7 +873,7 @@ static void sc_app_chk_snd_conn(struct stconn *sc)
 	/* OK, so now we know that some data might have been sent, and that we may
 	 * have to poll first. We have to do that too if the buffer is not empty.
 	 */
-	if (!co_data(oc)) {
+	if (!co_data(oc) && !sc_ep_have_ff_data(sc)) {
 		/* the connection is established but we can't write. Either the
 		 * buffer is empty, or we just refrain from sending because the
 		 * ->o limit was reached. Maybe we just wrote the last
@@ -1119,7 +1119,7 @@ void sc_notify(struct stconn *sc)
 	struct task *task = sc_strm_task(sc);
 
 	/* process consumer side */
-	if (!co_data(oc) && !sc_ep_have_ff_data(sco)) {
+	if (!co_data(oc) && !sc_ep_have_ff_data(sc)) {
 		struct connection *conn = sc_conn(sc);
 
 		if (((sc->flags & (SC_FL_SHUT_DONE|SC_FL_SHUT_WANTED)) == SC_FL_SHUT_WANTED) &&
