@@ -67,6 +67,10 @@ int cfg_parse_global(const char *file, int linenum, char **args, int kwm)
 		alertif_too_many_args(0, file, linenum, args, &err_code);
 		goto out;
 	}
+
+	if (global.mode & MODE_DISCOVERY)
+		goto discovery_kw;
+
 	else if (strcmp(args[0], "limited-quic") == 0) {
 		if (alertif_too_many_args(0, file, linenum, args, &err_code))
 			goto out;
@@ -872,12 +876,17 @@ int cfg_parse_global(const char *file, int linenum, char **args, int kwm)
 		const char *best;
 		int index;
 		int rc;
-
+discovery_kw:
 		list_for_each_entry(kwl, &cfg_keywords.list, list) {
 			for (index = 0; kwl->kw[index].kw != NULL; index++) {
 				if (kwl->kw[index].section != CFG_GLOBAL)
 					continue;
 				if (strcmp(kwl->kw[index].kw, args[0]) == 0) {
+
+					/* in MODE_DISCOVERY we read only the keywords, which contains the appropiate flag */
+					if ((global.mode & MODE_DISCOVERY) && ((kwl->kw[index].flags & KWF_DISCOVERY) == 0 ))
+						goto out;
+
 					if (check_kw_experimental(&kwl->kw[index], file, linenum, &errmsg)) {
 						ha_alert("%s\n", errmsg);
 						err_code |= ERR_ALERT | ERR_FATAL;
@@ -897,6 +906,9 @@ int cfg_parse_global(const char *file, int linenum, char **args, int kwm)
 				}
 			}
 		}
+
+		if (global.mode & MODE_DISCOVERY)
+			goto out;
 
 		best = cfg_find_best_match(args[0], &cfg_keywords.list, CFG_GLOBAL, common_kw_list);
 		if (best)
@@ -977,6 +989,9 @@ static int cfg_parse_global_master_worker(char **args, int section_type,
 					  struct proxy *curpx, const struct proxy *defpx,
 					  const char *file, int line, char **err)
 {
+	if (!(global.mode & MODE_DISCOVERY))
+		return 0;
+
 	if (too_many_args(1, args, err, NULL))
 		return -1;
 
@@ -999,6 +1014,9 @@ static int cfg_parse_global_mode(char **args, int section_type,
 				 struct proxy *curpx, const struct proxy *defpx,
 				 const char *file, int line, char **err)
 {
+	if (!(global.mode & MODE_DISCOVERY))
+		return 0;
+
 	if (too_many_args(0, args, err, NULL))
 		return -1;
 
@@ -1024,6 +1042,9 @@ static int cfg_parse_global_disable_poller(char **args, int section_type,
 					   struct proxy *curpx, const struct proxy *defpx,
 					   const char *file, int line, char **err)
 {
+	if (!(global.mode & MODE_DISCOVERY))
+		return 0;
+
 	if (too_many_args(0, args, err, NULL))
 		return -1;
 
@@ -1051,6 +1072,9 @@ static int cfg_parse_global_pidfile(char **args, int section_type,
 				    struct proxy *curpx, const struct proxy *defpx,
 				    const char *file, int line, char **err)
 {
+	if (!(global.mode & MODE_DISCOVERY))
+		return 0;
+
 	if (too_many_args(1, args, err, NULL))
 		return -1;
 
@@ -1521,15 +1545,15 @@ static struct cfg_kw_list cfg_kws = {ILH, {
 	{ CFG_GLOBAL, "force-cfg-parser-pause", cfg_parse_global_parser_pause, KWF_EXPERIMENTAL },
 	{ CFG_GLOBAL, "harden.reject-privileged-ports.tcp",  cfg_parse_reject_privileged_ports },
 	{ CFG_GLOBAL, "harden.reject-privileged-ports.quic", cfg_parse_reject_privileged_ports },
-	{ CFG_GLOBAL, "master-worker", cfg_parse_global_master_worker },
-	{ CFG_GLOBAL, "daemon", cfg_parse_global_mode } ,
-	{ CFG_GLOBAL, "quiet", cfg_parse_global_mode },
-	{ CFG_GLOBAL, "zero-warning", cfg_parse_global_mode },
-	{ CFG_GLOBAL, "noepoll", cfg_parse_global_disable_poller },
-	{ CFG_GLOBAL, "nokqueue", cfg_parse_global_disable_poller },
-	{ CFG_GLOBAL, "noevports", cfg_parse_global_disable_poller },
-	{ CFG_GLOBAL, "nopoll", cfg_parse_global_disable_poller },
-	{ CFG_GLOBAL, "pidfile", cfg_parse_global_pidfile },
+	{ CFG_GLOBAL, "master-worker", cfg_parse_global_master_worker, KWF_DISCOVERY },
+	{ CFG_GLOBAL, "daemon", cfg_parse_global_mode, KWF_DISCOVERY } ,
+	{ CFG_GLOBAL, "quiet", cfg_parse_global_mode, KWF_DISCOVERY },
+	{ CFG_GLOBAL, "zero-warning", cfg_parse_global_mode, KWF_DISCOVERY },
+	{ CFG_GLOBAL, "noepoll", cfg_parse_global_disable_poller, KWF_DISCOVERY },
+	{ CFG_GLOBAL, "nokqueue", cfg_parse_global_disable_poller, KWF_DISCOVERY },
+	{ CFG_GLOBAL, "noevports", cfg_parse_global_disable_poller, KWF_DISCOVERY },
+	{ CFG_GLOBAL, "nopoll", cfg_parse_global_disable_poller, KWF_DISCOVERY },
+	{ CFG_GLOBAL, "pidfile", cfg_parse_global_pidfile, KWF_DISCOVERY },
 	{ CFG_GLOBAL, "expose-deprecated-directives", cfg_parse_global_non_std_directives },
 	{ CFG_GLOBAL, "expose-experimental-directives", cfg_parse_global_non_std_directives },
 	{ CFG_GLOBAL, "tune.runqueue-depth", cfg_parse_global_tune_opts },
@@ -1553,10 +1577,10 @@ static struct cfg_kw_list cfg_kws = {ILH, {
 	{ CFG_GLOBAL, "tune.disable-zero-copy-forwarding", cfg_parse_global_tune_forward_opts },
 	{ CFG_GLOBAL, "tune.chksize", cfg_parse_global_unsupported_opts },
 	{ CFG_GLOBAL, "nbproc", cfg_parse_global_unsupported_opts },
-	{ CFG_GLOBAL, "setenv", cfg_parse_global_env_opts },
-	{ CFG_GLOBAL, "unsetenv", cfg_parse_global_env_opts },
-	{ CFG_GLOBAL, "resetenv", cfg_parse_global_env_opts },
-	{ CFG_GLOBAL, "presetenv", cfg_parse_global_env_opts },
+	{ CFG_GLOBAL, "setenv", cfg_parse_global_env_opts, KWF_DISCOVERY },
+	{ CFG_GLOBAL, "unsetenv", cfg_parse_global_env_opts, KWF_DISCOVERY },
+	{ CFG_GLOBAL, "resetenv", cfg_parse_global_env_opts, KWF_DISCOVERY },
+	{ CFG_GLOBAL, "presetenv", cfg_parse_global_env_opts, KWF_DISCOVERY },
 	{ 0, NULL, NULL },
 }};
 
